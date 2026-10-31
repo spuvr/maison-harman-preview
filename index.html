@@ -957,7 +957,11 @@ html[lang="ar"] .pv-sec h3{font-family:var(--f-ar-display);font-weight:700;font-
 .js .draw{stroke-dashoffset:1;transition:stroke-dashoffset 2.2s cubic-bezier(.65,0,.35,1);transition-delay:var(--d,0ms)}
 .js .in .draw,.js .draw.in{stroke-dashoffset:0}
 .slot .draw{stroke-dashoffset:0!important}
-.arch-line .draw{stroke-dasharray:none}
+/* arch outlines: Chrome stops a pathLength dash short on a non-scaling stroke, so the line is solid by default and drawIn() draws it with a dash measured in screen pixels */
+.arch-line .draw{stroke-dasharray:var(--len,none)}
+.js .arch-line .draw{stroke-dashoffset:var(--len,0)}
+.js .arch-line .draw.in{stroke-dashoffset:0}
+.js .arch-line .draw[data-wait]{opacity:0}
 @media (prefers-reduced-motion:reduce){
   *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
   .js .rv{opacity:1;transform:none;filter:none}
@@ -1945,7 +1949,7 @@ let booted = false;
 function renderAll() {
   applyStatic(); applyThemeUI(); renderMarquee(); renderHero(); renderDoors(); renderRail(); renderSpine(); splitWords(); renderQuiz(); renderDeals(); renderTrio(); renderCarte(); renderChat(); renderRevs(); renderFaq(); renderSocial(); renderBag(); updateCount(false); search($('#q').value); renderWa(); renderOpenLayers();
   archLines();
-  if (booted) $$('.rv, svg .draw').forEach(e => e.classList.add('in')); else observe();
+  if (booted) $$('.rv, svg .draw').forEach(e => { delete e.dataset.wait; e.classList.add('in'); }); else observe();
   booted = true; dialProgress();
 }
 function setLang(l) {
@@ -1967,11 +1971,34 @@ function search(q) {
 
 /* ---------------- reveal ---------------- */
 let io;
-if ('IntersectionObserver' in window) io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { e.target.classList.add('in'); $$('.draw', e.target).forEach(d => d.classList.add('in')); io.unobserve(e.target); } }), {rootMargin: '0px 0px -8% 0px', threshold: .12});
+if ('IntersectionObserver' in window) io = new IntersectionObserver(es => es.forEach(e => { if (e.isIntersecting) { (e.target.matches('.draw') ? [e.target] : $$('.draw', e.target)).forEach(drawIn); e.target.classList.add('in'); io.unobserve(e.target); } }), {rootMargin: '0px 0px -8% 0px', threshold: .12});
 function observe(r) {
   const els = $$('.rv, svg .draw', r || document);
   if (!io || RM.matches) { els.forEach(e => e.classList.add('in')); return; }
-  els.forEach(e => { if (!e.classList.contains('in')) io.observe(e.closest('.rv') || e.closest('.door,.pc,.slot,figure') || e); });
+  els.forEach(e => {
+    if (e.classList.contains('in')) return;
+    if (e.matches('.arch-line .draw') && !e.closest('.slot')) e.dataset.wait = '';
+    io.observe(e.closest('.rv') || e.closest('.door,.pc,.slot,figure') || e);
+  });
+}
+/* draw an arch outline in: dash = its length on screen, then back to a plain solid line once drawn */
+function drawIn(d) {
+  const wait = 'wait' in d.dataset; delete d.dataset.wait;
+  if (d.classList.contains('in')) return;
+  if (wait && !RM.matches) {
+    const m = d.getScreenCTM(), L0 = d.getTotalLength();
+    let L = 0, a;
+    if (m && L0) for (let i = 0; i <= 64; i++) { const b = d.getPointAtLength(L0 * i / 64).matrixTransform(m); if (a) L += Math.hypot(b.x - a.x, b.y - a.y); a = b; }
+    if (L > 1) {
+      d.removeAttribute('pathLength');
+      d.style.transition = 'none'; d.style.setProperty('--len', Math.ceil(L) + 2 + 'px');
+      d.getBoundingClientRect(); d.style.transition = '';
+      const done = () => d.style.removeProperty('--len');
+      d.addEventListener('transitionend', done, {once: true});
+      setTimeout(done, 2600 + (parseFloat(getComputedStyle(d).transitionDelay) || 0) * 1000);
+    }
+  }
+  d.classList.add('in');
 }
 
 /* ---------------- events ---------------- */
